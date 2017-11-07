@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
-.Rproj
+*.Rproj
+.DS_Store
 /data
-Datapilot_luchtkwaliteit.Rproj
+
