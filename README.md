@@ -1,3 +1,3 @@
-# Datapilot_luchtkwaliteit
+# Datapilot luchtkwaliteit
 
-Shared repository for 'Datapilot luchtkwaliteit'
+Shared repository for 'Datapilot luchtkwaliteit'.
