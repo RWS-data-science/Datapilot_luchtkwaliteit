@@ -23,7 +23,7 @@ meteo <- read.table("data/data_knmi_bas2/knmi_meteo/KNMI_Eindhoven_201501-201710
 colnames(meteo)<- gsub(" |#","",strsplit(readLines("data/data_knmi_bas2/knmi_meteo/KNMI_Eindhoven_201501-201710_hourly.dat",n=33)[33],",")[[1]])
 meteo$datetime<- as.POSIXct(strptime(paste(meteo$YYYYMMDD,meteo$HH),"%Y%m%d %H"))
 
-df <-merge(df,meteo,by.x="dateTime",by.y="datetime")
+df <-merge(df,meteo,by.x="dateTime",by.y="datetime",all.x = T)
 
 
 ##PM10
@@ -35,14 +35,14 @@ PM10$dateTime <- as.POSIXct(strptime(PM10$dateTime,"%Y-%m-%d %H:%M:%S"))
 PM10$PM10 <- PM10$value
 PM10$value<- NULL
 
-df<- merge(df,PM10,by=c("dateTime","stn_ID") )
+df<- merge(df,PM10,by=c("dateTime","stn_ID") ,all.x = T)
 
 ##Data CAMS
 cams<- read.csv("data/data_knmi_bas_final/cams/cams_Eindhoven_2016_NOx.csv")
 cams$dateTime <- as.POSIXct(strptime(cams$dateTime,"%Y-%m-%d %H:%M:%S"))
 colnames(cams)<- paste0("cams_",colnames(cams))
 
-df<- merge(df,cams,by.x = "dateTime",by.y = "cams_dateTime")
+df<- merge(df,cams,by.x = "dateTime",by.y = "cams_dateTime",all.x = T)
 
 ##Data van Sjoerd
 data_sjoerd_onlyshortest<- read.csv("data/uitwisseling/combineLinePointsCleaned/koppel_INTRIX_StationsOnlyShortest.csv")
@@ -58,17 +58,17 @@ df$orient_deg_SEGMENT_ID_nearest <- data_sjoerd_onlyshortest$orientation_deg[mat
 cbs50<- read.csv("data/CBSinvoer/83618NED_TypedDataSet_31102017_102723_50m_out.csv")
 cbs50$stationID[(nrow(cbs50)-2):nrow(cbs50)]<- paste0("NL",cbs50$stationID[(nrow(cbs50)-2):nrow(cbs50)])
 colnames(cbs50)<- paste0("cbs50_",colnames(cbs50))
-df<- merge(df, cbs50, by.x="stn_ID",by.y= "cbs50_stationID")
+df<- merge(df, cbs50, by.x="stn_ID",by.y= "cbs50_stationID",all.x = T)
 
 cbs100<- read.csv("data/CBSinvoer/83618NED_TypedDataSet_31102017_102723_100m_out.csv")
 cbs100$stationID[(nrow(cbs100)-2):nrow(cbs100)]<- paste0("NL",cbs50$stationID[(nrow(cbs100)-2):nrow(cbs100)])
 colnames(cbs100)<- paste0("cbs100_",colnames(cbs100))
-df<- merge(df, cbs100, by.x="stn_ID",by.y= "cbs100_stationID")
+df<- merge(df, cbs100, by.x="stn_ID",by.y= "cbs100_stationID",all.x = T)
 
 cbs200<- read.csv("data/CBSinvoer/83618NED_TypedDataSet_31102017_102723_200m_out.csv")
 cbs200$stationID[(nrow(cbs200)-2):nrow(cbs200)]<- paste0("NL",cbs50$stationID[(nrow(cbs200)-2):nrow(cbs200)])
 colnames(cbs200)<- paste0("cbs200_",colnames(cbs200))
-df<- merge(df, cbs200, by.x="stn_ID",by.y= "cbs200_stationID")
+df<- merge(df, cbs200, by.x="stn_ID",by.y= "cbs200_stationID",all.x = T)
 
 ##exploration
 library(ggplot2)
@@ -136,7 +136,7 @@ for (station in unique(stations$`LML ID`)){
 }
 
 
-df<- merge(df,st,by="stn_ID")
+df<- merge(df,st,by="stn_ID",all.x= T)
 
 
 
@@ -147,14 +147,38 @@ df$svf <- skyview$svf[match(df$stn_ID,skyview$LML.ID)]
 boundery_layer<- read.csv("data/DGMI-DATAMATCH/dataDelivered/stationsBoundaryLayerHeight1HourInterpol.csv")
 boundery_layer$dateTime <- as.POSIXct(strptime(boundery_layer$timeStamp,"%Y-%m-%d %H:%M:%S"))
 
-df<- merge(df,boundery_layer[,c("LML.ID","dateTime","BoundaryLayerHeight.m.")],by.x=c("stn_ID","dateTime"),by.y=c("LML.ID","dateTime"))
+df<- merge(df,boundery_layer[,c("LML.ID","dateTime","BoundaryLayerHeight.m.")],by.x=c("stn_ID","dateTime"),by.y=c("LML.ID","dateTime"),all.x = T)
 
 heigth_around<-  read.csv("data/DGMI-DATAMATCH/dataDelivered/stationsWithHeightAround.csv")
-df$height_aorund_mean50 <- heigth_around$mean50[match(df$stn_ID,heigth_around$LML.ID)]
-df$height_aorund_sd50 <- heigth_around$sd50[match(df$stn_ID,heigth_around$LML.ID)]
-df$height_aorund_mean100 <- heigth_around$mean100[match(df$stn_ID,heigth_around$LML.ID)]
-df$height_aorund_sd100 <- heigth_around$sd100[match(df$stn_ID,heigth_around$LML.ID)]
-df$height_aorund_mean200 <- heigth_around$mean200[match(df$stn_ID,heigth_around$LML.ID)]
-df$height_aorund_sd200 <- heigth_around$sd200[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_mean50 <- heigth_around$mean50[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_sd50 <- heigth_around$sd50[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_mean100 <- heigth_around$mean100[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_sd100 <- heigth_around$sd100[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_mean200 <- heigth_around$mean200[match(df$stn_ID,heigth_around$LML.ID)]
+df$height_around_sd200 <- heigth_around$sd200[match(df$stn_ID,heigth_around$LML.ID)]
 
-write.csv(df,file="data/dataframe_14u24.csv")
+
+
+
+##convert factors to numeric for some of the cbs vars
+df$cbs100_GemiddeldeWoningwaarde_35<- as.numeric(as.character(df$cbs100_GemiddeldeWoningwaarde_35))
+df$cbs100_BouwjaarVoor2000_45<- as.numeric(as.character(df$cbs100_BouwjaarVoor2000_45))
+df$cbs100_BouwjaarVanaf2000_46 <- as.numeric(as.character(df$cbs100_BouwjaarVanaf2000_46 ))
+df$cbs200_GemiddeldeWoningwaarde_35<- as.numeric(as.character(df$cbs200_GemiddeldeWoningwaarde_35))
+df$cbs200_BouwjaarVoor2000_45<- as.numeric(as.character(df$cbs200_BouwjaarVoor2000_45))
+df$cbs200_BouwjaarVanaf2000_46 <- as.numeric(as.character(df$cbs200_BouwjaarVanaf2000_46 ))
+df$cbs200_GemiddeldElektriciteitsverbruikTotaal_47<- as.numeric(as.character(df$cbs200_GemiddeldElektriciteitsverbruikTotaal_47))
+df$cbs200_GemiddeldAardgasverbruikTotaal_55<- as.numeric(as.character(df$cbs200_GemiddeldAardgasverbruikTotaal_55))
+
+# df$height_aorund_mean50<-NULL
+# df$height_aorund_mean100<-NULL
+# df$height_aorund_mean200<-NULL
+# 
+# height_aorund_sd50 <- NULL
+# height_aorund_sd100 <- NULL
+# height_aorund_sd200 <- NULL
+
+
+
+write.csv(df,file="data/dataframe_15u42.csv")
+
