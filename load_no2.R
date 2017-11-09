@@ -178,7 +178,15 @@ df$cbs200_GemiddeldAardgasverbruikTotaal_55<- as.numeric(as.character(df$cbs200_
 # height_aorund_sd100 <- NULL
 # height_aorund_sd200 <- NULL
 
+##NSL data Sjoerd
+NSL<- read.csv("data/relativeAngle.csv")
+NSL$timestamp <- as.POSIXct(strptime(NSL$timestamp,"%d/%m/%Y %H:%M"))
+NSL$timestamp <- NSL$timestamp - 3600 #naar UTC
+colnames(NSL)<- paste0("NSL_",colnames(NSL))
+
+df<- merge(df, NSL, by.x=c("stn_ID","dateTime"),by.y = c("NSL_id_Aireas","NSL_timestamp"),all.x=T)
 
 
-write.csv(df,file="data/dataframe_15u42.csv")
+
+write.csv(df,file="data/dataframe_16u32.csv")
 
