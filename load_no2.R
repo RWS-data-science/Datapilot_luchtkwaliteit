@@ -37,6 +37,20 @@ PM10$value<- NULL
 
 df<- merge(df,PM10,by=c("dateTime","stn_ID") )
 
+##Data CAMS
+cams<- read.csv("data/data_knmi_bas_final/cams/cams_Eindhoven_2016_NOx.csv")
+cams$dateTime <- as.POSIXct(strptime(cams$dateTime,"%Y-%m-%d %H:%M:%S"))
+colnames(cams)<- paste0("cams_",colnames(cams))
+
+df<- merge(df,cams,by.x = "dateTime",by.y = "cams_dateTime")
+
+##Data van Sjoerd
+data_sjoerd_onlyshortest<- read.csv("data/uitwisseling/combineLinePointsCleaned/koppel_INTRIX_StationsOnlyShortest.csv")
+data_sjoerd_alles<- read.csv("data/uitwisseling/combineLinePointsCleaned/koppel_INTRIX_Stations.csv")
+
+df$SEGMENT_ID_nearest <- data_sjoerd_onlyshortest$SEGMENT_ID[match(df$stn_ID,data_sjoerd_onlyshortest$id_Aireas)]
+df$dist_SEGMENT_ID_nearest <- data_sjoerd_onlyshortest$dist[match(df$stn_ID,data_sjoerd_onlyshortest$id_Aireas)]
+df$orient_deg_SEGMENT_ID_nearest <- data_sjoerd_onlyshortest$orientation_deg[match(df$stn_ID,data_sjoerd_onlyshortest$id_Aireas)]
 
 ##exploration
 library(ggplot2)
@@ -49,3 +63,6 @@ ggplot(df,aes(x=factor(HH),y=PM10))+geom_boxplot()+facet_wrap(~stn_ID)+ylim(0,70
 #df vs PM10
 ggplot(df,aes(x=PM10,y=NO2))+geom_point(alpha=0.1)+facet_wrap(~stn_ID)+xlim(0,150)+ylim(0,100)
 
+
+
+write.csv(df,file="data/dataframe_11u30.csv")
