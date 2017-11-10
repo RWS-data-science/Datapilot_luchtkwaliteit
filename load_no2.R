@@ -187,6 +187,6 @@ colnames(NSL)<- paste0("NSL_",colnames(NSL))
 df<- merge(df, NSL, by.x=c("stn_ID","dateTime"),by.y = c("NSL_id_Aireas","NSL_timestamp"),all.x=T)
 
 
-
+save(df,file="data/dataframe_16_32.RData")
 write.csv(df,file="data/dataframe_16u32.csv")
 
