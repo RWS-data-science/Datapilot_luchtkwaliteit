@@ -1,0 +1,125 @@
+---
+title: "FIrst Exploration"
+author: "G.A. Pagani - M. Schipper"
+date: "November 9, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Loading required libs.
+
+```{r libs}
+library(data.table)
+library(ggplot2)
+library(GGally)
+library(reshape2)
+library(chron)
+Sys.setenv(TZ = "UTC")
+```
+
+
+Read data and convert time and remove data where datetime is not available
+```{r readData}
+data<-read.csv("data/dataframe_15u42.csv")
+data$dateTime<-as.POSIXct(as.character(data$dateTime), format = "%Y-%m-%d %H:%M:%S")
+data<-data.table(data)
+data<-data[!is.na(dateTime)]
+```
+
+
+
+```{r avgs}
+#no effect this operation with the hourly aggregated data
+avg.hr.no2<-data[,.(avg=mean(NO2)), by=.(YYYYMMDD,HH,stn_ID,dateTime)]
+```
+
+
+
+plot hourly time series
+
+```{r plotTime}
+ggplot(avg.hr.no2, aes(dateTime,avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+ggplot(avg.hr.no2, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID), method = "lm")+ facet_wrap(~stn_ID)
+ggplot(avg.hr.no2, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID)) + facet_wrap(~stn_ID)
+
+hour.24.cams<-data
+ggplot(hour.24.cams, aes(dateTime,cams_NO2_3x3_min))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+
+
+```
+
+
+```{r cleanStations}
+avg.hr.no2<-subset(avg.hr.no2,!stn_ID %in% c(5,23))
+```
+
+```{r plotTime1}
+ggplot(avg.hr.no2, aes(dateTime,avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+```
+
+plot correlations
+
+```{r correlationsHours}
+test<-reshape(avg.hr.no2[,c(-1,-2)], idvar = "dateTime", timevar = "stn_ID", direction = "wide")
+ggcorr(test[,-1],midpoint = .5, low=  "#EEEEEE")
+```
+
+```{r correlations with time}
+test$dateTime <- as.numeric(test$dateTime)
+ggcorr(test)
+```
+
+
+##24-Hourly
+```{r average for each hour}
+hour.24.avg<-data[,.(avg=mean(NO2)), by=.(HH,stn_ID)]
+ggplot(hour.24.avg, aes(HH,avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+```
+
+```{r correlations24Hours}
+test2<-reshape(hour.24.avg, idvar = "HH", timevar = "stn_ID", direction = "wide")
+ggcorr(test2[,-1],midpoint = .5, low=  "#EEEEEE")
+```
+
+
+### Weekdays vs. Weekend
+
+```{r AddweekendIndicator}
+data[,weekend:=is.weekend(dateTime)]
+```
+
+```{r weekendPlots}
+hour.24.avg.weekend<-data[,.(avg=mean(NO2)), by=.(HH,stn_ID,weekend)]
+ggplot(hour.24.avg.weekend, aes(HH,avg))+geom_line(aes(color=weekend))+ facet_wrap(~stn_ID)
+```
+  
+##adding CAMS
+```{r CAMS}
+avg.hr.cams<-subset(data,!stn_ID %in% c(5,23))
+test.cams<-reshape(avg.hr.cams[,c("stn_ID","dateTime","cams_NO2_3x3_min")], idvar = "dateTime", timevar = "stn_ID", direction = "wide")
+test.cams$dateTime <- as.numeric(test.cams$dateTime)
+ggcorr(test.cams)
+```
+
+```{r CamsSame}
+sum(test.cams$cams_NO2_3x3_min.12-test.cams$cams_NO2_3x3_min.35,na.rm = T)
+
+```
+
+```{r camsRemoval}
+#avg.hr.cams[]
+camsStation<-test.cams[,dateTime,cams_NO2_3x3_min.12]
+camsStation[,stn_ID:="CAMS"]
+camsStation[,dateTime:=as.POSIXct(camsStation$dateTime, origin="1970-01-01")]
+setnames(camsStation,old = "cams_NO2_3x3_min.12","NO2")
+#check time preservation?
+test$cams<-camsStation$NO2
+ggcorr(test)
+```
+
+
+
