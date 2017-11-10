@@ -22,12 +22,29 @@ Sys.setenv(TZ = "UTC")
 ```
 
 
-Read data and convert time and remove data where datetime is not available
+Read data 
 ```{r readData}
-data<-read.csv("data/dataframe_15u42.csv")
+data<-read.csv("data/dataframe2_10u55.csv")
+```
+Cleaning data and convert time and remove data where datetime is not available
+Correct location of stations that have moved: 34 and 35 according to Bas excel sheet
+```{r cleaning}
 data$dateTime<-as.POSIXct(as.character(data$dateTime), format = "%Y-%m-%d %H:%M:%S")
 data<-data.table(data)
-data<-data[!is.na(dateTime)]
+
+data <- within(data, {
+  dateTime[stn_ID==35 & dateTime>=as.POSIXct("2016-07-21 00:00:00", format = "%Y-%m-%d %H:%M:%S", tz="UTC") & 
+             dateTime<= as.POSIXct("2016-08-04 00:00:00", format = "%Y-%m-%d %H:%M:%S", tz="UTC") ] <- NA
+ 
+  stn_ID <- as.character(stn_ID)
+  stn_ID[stn_ID=="34" &  dateTime<=as.POSIXct("2016-08-03 00:00:00", format = "%Y-%m-%d %H:%M:%S", tz="UTC")] <- "34a"
+  stn_ID[stn_ID=="34"] <- "34b"
+  stn_ID <- factor(stn_ID)
+  NO2minusCAMS <- NO2-cams_NO2_3x3_min
+
+})
+
+ data<-data[!is.na(dateTime)]
 ```
 
 
@@ -41,13 +58,21 @@ avg.hr.no2<-data[,.(avg=mean(NO2)), by=.(YYYYMMDD,HH,stn_ID,dateTime)]
 
 plot hourly time series
 
-```{r plotTime}
-ggplot(avg.hr.no2, aes(dateTime,avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
-ggplot(avg.hr.no2, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID), method = "lm")+ facet_wrap(~stn_ID)
-ggplot(avg.hr.no2, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID)) + facet_wrap(~stn_ID)
+```{r plotTime, fig.width = 9, fig.height = 14}
+ggplot(avg.hr.no2, aes(as.Date(dateTime),avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID, ncol = 3) +
+  scale_x_date(date_labels = "%b") +
+  labs(title = "Hourly average of NO2 concentration per location for 2016", y ="avg NO2", x = "calender time")
+ggplot(avg.hr.no2, aes(as.Date(dateTime),avg))+geom_smooth(aes(group = stn_ID), method = "lm")+ facet_wrap(~stn_ID, ncol = 3) +
+   scale_x_date(date_labels = "%b") +
+  labs(title = "Linear trend of hourly average of NO2 concentration per location for 2016", y ="avg NO2", x = "calender time")
+ggplot(avg.hr.no2, aes(as.Date(dateTime),avg))+geom_smooth(aes(group = stn_ID)) + facet_wrap(~stn_ID, ncol = 3) +
+   scale_x_date(date_labels = "%b") +
+    labs(title = "Smoothed trend of hourly average of NO2 concentration per location for 2016", y ="avg NO2", x = "calender time")
+
 
 hour.24.cams<-data
-ggplot(hour.24.cams, aes(dateTime,cams_NO2_3x3_min))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+ggplot(hour.24.cams, aes(as.Date(dateTime),cams_NO2_3x3_min))+geom_line(aes(group = stn_ID)) + facet_wrap(~stn_ID, ncol = 3) +
+   scale_x_date(date_labels = "%b") 
 
 
 ```
@@ -55,6 +80,7 @@ ggplot(hour.24.cams, aes(dateTime,cams_NO2_3x3_min))+geom_line(aes(group = stn_I
 
 ```{r cleanStations}
 avg.hr.no2<-subset(avg.hr.no2,!stn_ID %in% c(5,23))
+data<-subset(data,!stn_ID %in% c(5,23))
 ```
 
 ```{r plotTime1}
@@ -92,9 +118,11 @@ ggcorr(test2[,-1],midpoint = .5, low=  "#EEEEEE")
 data[,weekend:=is.weekend(dateTime)]
 ```
 
-```{r weekendPlots}
+```{r weekendPlots , fig.width = 9, fig.height = 14}
 hour.24.avg.weekend<-data[,.(avg=mean(NO2)), by=.(HH,stn_ID,weekend)]
-ggplot(hour.24.avg.weekend, aes(HH,avg))+geom_line(aes(color=weekend))+ facet_wrap(~stn_ID)
+ggplot(hour.24.avg.weekend, aes(HH,avg))+geom_line(aes(color=weekend))+ facet_wrap(~stn_ID) +
+  scale_color_manual(name = "", values = 1:2, labels = c("mo-fr", "sa-su"))+
+  labs(x = "hour of the day", y = "avg NO2", title = "weekend vs no weekend hourly average of NO2 concentration per location for 2016")
 ```
   
 ##adding CAMS
@@ -109,8 +137,8 @@ ggcorr(test.cams)
 sum(test.cams$cams_NO2_3x3_min.12-test.cams$cams_NO2_3x3_min.35,na.rm = T)
 
 ```
-
-```{r camsRemoval}
+correlations of the CAMS background
+```{r camsCorr, fig.width = 9, fig.height = 9}
 #avg.hr.cams[]
 camsStation<-test.cams[,dateTime,cams_NO2_3x3_min.12]
 camsStation[,stn_ID:="CAMS"]
@@ -118,8 +146,40 @@ camsStation[,dateTime:=as.POSIXct(camsStation$dateTime, origin="1970-01-01")]
 setnames(camsStation,old = "cams_NO2_3x3_min.12","NO2")
 #check time preservation?
 test$cams<-camsStation$NO2
-ggcorr(test)
+newnames <- gsub("avg." , "st_", names(test))
+setnames(test, newnames)
+ggcorr(test, midpoint = 0)+labs(title="Correlations between stations NO2 observations, CAMS, and time")
 ```
+
+CAMS is added as an additional observation station
+```{r cams as observation station}
+camsObs<-melt.data.table(test,id.vars = "dateTime", variable.name = "stn_ID",value.name = "avg")
+camsObs[,stn_ID:=gsub("avg.","",stn_ID)]
+ggplot(camsObs, aes(dateTime,avg))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+ggplot(camsObs, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID), method = "lm")+ facet_wrap(~stn_ID)
+ggplot(camsObs, aes(dateTime,avg))+geom_smooth(aes(group = stn_ID)) + facet_wrap(~stn_ID)
+
+```
+
+
+visualization of data with CAMS contribution subtracted
+
+```{r visualization cams subtracted}
+ggplot(data, aes(dateTime,NO2minusCAMS))+geom_line(aes(group = stn_ID))+ facet_wrap(~stn_ID)
+ggplot(data, aes(dateTime,NO2minusCAMS))+geom_smooth(aes(group = stn_ID), method = "lm")+ facet_wrap(~stn_ID)
+ggplot(data, aes(dateTime,NO2minusCAMS))+geom_smooth(aes(group = stn_ID)) + facet_wrap(~stn_ID)
+```
+
+
+
+## Streets and Wind using NSL inner-product
+# ```{r streets and wind}
+# trafficAndRoads<-data[,dateTime,stn_ID,NO2,NO2minusCAMS,NSL_inproduct,NSL_INT_LV,NSL_INT_MV,NSL_INT_ZV,NSL_INT_BV,dist_SEGMENT_ID_nearest]
+# 
+# trafficAndRoads[,road_contr:=ifelse(NSL_inproduct>=0,yes = NSL_inproduct, no = 0)]
+# ```
+
+
 
 
 
