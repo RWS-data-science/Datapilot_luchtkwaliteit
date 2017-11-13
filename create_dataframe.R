@@ -1,4 +1,6 @@
 #Load the Aerias data provided by Bas
+library(data.table)
+
 NO2 <- read.csv("data/data_knmi_bas_final/aireas/aireas_lml_2016.no2.csv",header = T)
 
 #melt to get all measurement data into one column
@@ -179,14 +181,40 @@ df$cbs200_GemiddeldAardgasverbruikTotaal_55<- as.numeric(as.character(df$cbs200_
 # height_aorund_sd200 <- NULL
 
 ##NSL data Sjoerd
-NSL<- read.csv("data/relativeAngle.csv")
-NSL$timestamp <- as.POSIXct(strptime(NSL$timestamp,"%d/%m/%Y %H:%M"))
-NSL$timestamp <- NSL$timestamp - 3600 #naar UTC
+NSL<- read.csv("data/LinkNSLtoAireasLML/relativeAngleOnlyShortest.csv")
+NSL$timestamp <- as.POSIXct(strptime(NSL$timestamp,"%d-%m-%Y %H:%M"))
+
 colnames(NSL)<- paste0("NSL_",colnames(NSL))
+
 
 df<- merge(df, NSL, by.x=c("stn_ID","dateTime"),by.y = c("NSL_id_Aireas","NSL_timestamp"),all.x=T)
 
 
-save(df,file="data/dataframe_16_32.RData")
-write.csv(df,file="data/dataframe_16u32.csv")
+
+#####Add speed data (Marlous)
+speed<- lapply(list.files("data/Speed/"),function(x){fread(paste0("data/speed/",x),stringsAsFactors = TRUE)}) 
+speed<- rbindlist(speed)
+ref<- list()
+# ref_files<- c("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv","data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv",
+#               "data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
+#ref<- rbindlist(lapply(ref_files,function(x){cbind(x,read.csv(x))} ),fill = T)
+ref[[1]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv")
+ref[[1]]$basemap <- 1602
+ref[[2]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv")
+ref[[2]]$basemap <- 1502
+ref[[3]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
+ref[[3]]$basemap <- 1601
+
+ref<- rbindlist(ref,fill=T)
+
+
+ref<- merge(ref[,c("id_Aireas","XDSegID","basemap")],speed, by.x=c("XDSegID","basemap"),by.y=c("segmentid","basemapid"),all.x=TRUE)
+ref$`datetime (UTC)`<- as.POSIXct(strptime(ref$`datetime (UTC)`,"%Y-%m-%d %H:%M:%S"))
+
+df<- merge(df,ref,by.x=c("stn_ID","dateTime"),by.y=c("id_Aireas","datetime (UTC)"),all.x=TRUE)
+
+
+###save
+save(df,file="data/dataframe2_14u12.RData")
+write.csv(df,file="data/dataframe2_14u12.csv")
 

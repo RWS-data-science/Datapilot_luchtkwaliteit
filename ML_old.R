@@ -5,7 +5,7 @@ library(ggplot2)
 
 
 
-load("data/dataframe2_14u12.RData")
+load("data/dataframe_16_32.RData")
 
 df_prep<- df
 
@@ -14,9 +14,14 @@ df_prep$X<- NULL
 df_prep$City<- NULL
 df_prep$Species<- NULL
 df_prep$STN<- NULL
-df_prep$YYYYMMDD<- NULL
-df_prep$basemap <- NULL
 
+
+
+
+
+xnam <- colnames(df_prep)
+xnam<- xnam[! xnam %in% c("NO2")]
+fmla <- as.formula(paste("NO2 ~ ", paste(xnam, collapse= "+")))
 
 stns<- sample(unique(df_prep$stn_ID),15) ## 15 station voor training, 7 voor testen (random geselecteerd)
 
@@ -34,6 +39,62 @@ localH2O = h2o.init(max_mem_size = '12g',
 train_h2o = as.h2o(train[,3:ncol(test)])
 test_h2o = as.h2o(test[,3:ncol(test)])
 
+model =
+  h2o.gbm(x = c(2:ncol(train)),  # column numbers for predictors
+          y = 1,   # column number for label
+          training_frame = train_h2o) # data in H2O format
+
+h2o.varimp_plot(model)
+
+h2o_y_test <- h2o.predict(model, test_h2o)
+
+
+test$pred<-  as.data.frame(h2o_y_test)
+
+#calculate rmse per station
+rmse_tot <- sqrt(mean((test$NO2-test$pred)^2,na.rm = TRUE))
+
+rmse <- test %>% group_by(stn_ID) %>%
+  summarize(rmse=sqrt(mean((NO2-pred)^2,na.rm = TRUE)))
+
+rmse
+
+ggplot(test,aes(x=dateTime,y=NO2))+geom_line()+geom_line(aes(y=pred),col="red")+facet_wrap(~stn_ID)
+
+
+
+###Auto-ML
+aml <- h2o.automl(x = c(2:ncol(train)), y = 1,
+                  training_frame = train_h2o,max_runtime_secs=120)
+
+# View the AutoML Leaderboard
+lb <- aml@leaderboard
+lb
+
+
+# The leader model is stored here
+aml@leader
+
+h2o.varimp_plot(aml@leader)
+
+
+h2o_y_test_aml<- h2o.predict(aml, test_h2o)
+
+
+test$pred_aml<-  as.data.frame(h2o_y_test_aml)
+
+#calculate rmse per station
+rmse_tot_aml <- sqrt(mean((test$NO2-test$pred_aml)^2,na.rm = TRUE))
+
+rmse_aml <- test %>% group_by(stn_ID) %>%
+  summarize(rmse=sqrt(mean((NO2-pred_aml)^2,na.rm = TRUE)))
+
+rmse_aml
+
+ggplot(test[test$dateTime<"2016-04-01 00:00:00",],aes(x=dateTime,y=NO2))+geom_line()+geom_line(aes(y=pred_aml),col="red")+geom_line(aes(y=cams_NO2),col="blue",alpha=0.5)+facet_wrap(~stn_ID)
+
+
+
 
 
 ## Hyper-Parameter Search for GBM
@@ -41,7 +102,7 @@ test_h2o = as.h2o(test[,3:ncol(test)])
 ## Construct a large Cartesian hyper-parameter space
 ntrees_opts <- c(10000) ## early stopping will stop earlier
 max_depth_opts <- seq(1,20)
-min_rows_opts <- c(10,20,50)
+min_rows_opts <- c(1,5,10,20,50,100)
 learn_rate_opts <- seq(0.001,0.01,0.001)
 sample_rate_opts <- seq(0.3,1,0.05)
 col_sample_rate_opts <- seq(0.3,1,0.05)
@@ -63,7 +124,7 @@ hyper_params = list( ntrees = ntrees_opts,
 search_criteria = list(strategy = "RandomDiscrete", max_runtime_secs = 600, max_models = 100, stopping_metric = "AUTO", stopping_tolerance = 0.00001, stopping_rounds = 5, seed = 123456)
 
 gbm.grid <- h2o.grid("gbm",
-                     
+                     grid_id = "mygrid",
                      x=c(2:ncol(train)), y = 1,
                      
                      # faster to use a 80/20 split
@@ -88,12 +149,12 @@ gbm.grid <- h2o.grid("gbm",
                      hyper_params = hyper_params,
                      search_criteria = search_criteria)
 
-gbm.sorted.grid <- h2o.getGrid(grid_id = gbm.grid@grid_id, sort_by = "mse")
+gbm.sorted.grid <- h2o.getGrid(grid_id = "mygrid", sort_by = "mse")
 print(gbm.sorted.grid)
 
 best_model <- h2o.getModel(gbm.sorted.grid@model_ids[[1]])
 summary(best_model)
-h2o.varimp_plot(best_model,num_of_features = 15)
+h2o.varimp_plot(best_model)
 
 
 h2o_y_test_grid<- h2o.predict(best_model, test_h2o)
@@ -109,7 +170,6 @@ rmse_grid <- test %>% group_by(stn_ID) %>%
 
 rmse_grid
 
-ggplot(test,aes(x=dateTime))+geom_line(aes(y=NO2),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID)+ ylim(0,100) +
-  geom_smooth(aes(y=NO2),col="black") + geom_smooth(aes(y=pred_grid),col="red")
+ggplot(test,aes(x=dateTime,y=NO2))+geom_line()+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID,scales = "free")
 
-ggplot(test[which(test$dateTime<"2016-02-01 00:00:00"& test$stn_ID!=3),],aes(x=dateTime))+geom_line(aes(y=NO2),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID)+ ylim(0,100)
+
