@@ -5,4 +5,5 @@
 *.Rproj
 .DS_Store
 /data
+*.zip
 
