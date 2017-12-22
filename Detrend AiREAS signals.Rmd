@@ -1,0 +1,220 @@
+---
+title: "Detrending AiREAS signals"
+author: "M. Schipper"
+date: "December 12, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+The measurements from AiREAS stations show a decreasing trend over the year. It is hypothesized that signals decrease because of degradation of the sensors in the AiREAS stations. In this document we will try to detrend the observations from the AiREAS stations based on the assumption that the degradation causes a linear decrease of the signal during the year.
+As a reference we will use the observations from the calibrated station NL10623, which one of the LML stations. This reference station is located in the center of Eindhoven.
+
+## Preliminaries
+# Loading required packages
+```{r libs}
+library(ggplot2)
+library(GGally)
+library(reshape2)
+library(chron)
+library(lubridate)
+library(splines)
+```
+
+# Set environment variables
+```{r environment}
+# set the current time zone to UTC
+Sys.setenv(TZ = "UTC")
+```
+
+## Data
+Reading data which has already been pre-cleaned in previous script.
+```{r readData}
+load(file =  "../data/dataframe08122017.bin")
+```
+
+## Additional cleaning
+Removing the observations obtained on jan 1, 2017 00:00:00. These are not in 2016 and cause artefacts in visualizations. Besides that the month of observation is calculated from the dateTime variable.
+
+```{r remove_2017_observations}
+data <- subset(data, 
+  dateTime != as.POSIXct("2017-01-01 00:00:00", format = "%Y-%m-%d %H:%M:%S", tz="UTC"))
+```
+
+## Data preparation for detrending
+For each measurement, calculate the hours since 2016-01-01 00:00:00 and the month in which the measurements were taken. For plotting issues, also reorder the levels of the station identifyers.
+```{r data_prep}
+# Take only relevant variables from data
+data <- data[, c("dateTime", "stn_ID", "NO2")]
+# Extract hours since jan 1, 2016 00:00:00 and month from dateTime variable
+data <- within(data, {
+  hours <- as.numeric((dateTime-as.POSIXct("2016-01-01 00:00:00", 
+    format = "%Y-%m-%d %H:%M:%S", tz="UTC"))/3600)
+  # define month
+  month <- month(dateTime)
+  # reorder the measurement stations
+  stn_ID <- factor(stn_ID, 
+    levels = levels(stn_ID)[order(as.numeric(unlist(regmatches(
+      x = levels(stn_ID), m = gregexpr(
+        pattern = "[[:digit:]]+", 
+        text = levels(stn_ID))))))])
+})
+```
+### Reference signal
+Take the $NO_2$ measurements of LML station NL10236 as the reference data. It is situated in the center of Eindhoven and we assume there is no linear decrease in its signal as result of degradation of the sensor.
+
+```{r reference_signal}
+# Extract signal from station NL10236
+data_ref <- subset(data, stn_ID == "NL10236", select = c(hours, NO2))
+names(data_ref)[2] <- "ref" 
+# and merge with data, so that for each timepoint the reference signal is available
+ref_data <- merge(data, data_ref, all = TRUE)
+```
+
+## Fit linear model
+To `ref_data` we fit now linear model to describe for each AiREAS station the measured $NO_2^{AiR}$ signal by the reference signal $NO_2^{ref}$, an intercept and a linear slope of time and additional noise. The reference signal is used as an offset here, i.e. it appears in the model, but a coefficient is not estimated.
+$$\forall {i|t_i\in 2016}: NO_2^{AiR}(t_i) = NO_2^{ref}(t_i) + \beta_0 + \beta_1t_i + \epsilon(t_i),$$
+with $\forall {i|t_i\in 2016}\ \epsilon(t_i)$ are i.i.d. with $N(0, \sigma^2)$.
+
+```{r fit_linear_model}
+mod.detrend <- with(ref_data, lm(NO2~ offset(ref) + hours*stn_ID))
+```
+
+## Detrend $NO_2$ signal
+Based on this model we can make predictions of the AiREAS signal, as if there was no degradation of the sensor by setting $\beta_1=0$. The predicted AiREAS signal will then be:
+$$\hat{NO_2^{AiR}}(t_i) = NO_2^{ref}(t_i) + \hat{\beta}_0 + \hat\epsilon(t_i),$$
+where $\hat\beta_0$ and $\hat\epsilon(t_i)$ are the estimated intercept and residuals from the fitted linear model.
+
+```{r make_predictions}
+ref_data <- within(ref_data, {
+  # make predictions of original signal
+  pred.NO2 <- predict(mod.detrend, newdata = ref_data)
+  # make predictions of detrended signal, without residuals
+  pred.NO2.detrend <- predict(mod.detrend, newdata = within(ref_data, hours<-0))
+  # define the residuals
+  errors <- NO2 - pred.NO2 
+  # add the residuals to the predictions, but do not detrend signal for LML stations
+  NO2.detrend <- ifelse(test = grepl(pattern = "NL", x = stn_ID),
+    yes = NO2, no = pred.NO2.detrend + errors)
+  })
+```
+
+Graphically, it looks like this for AiREAS station 4:
+```{r graphic_display_model, echo = FALSE}
+
+ref_data4 <- na.omit(subset(ref_data, stn_ID == 4, 
+  select = c("hours", "dateTime", "stn_ID", "NO2", "ref")))
+mod4 <- with(ref_data4, lm(NO2~ offset(ref)+hours))
+ref_data4 <- within(ref_data4, {
+  NO2.detrend.pred <- predict(mod4, newdata = within(ref_data4, hours <- 0))
+  errors <- residuals(mod4)
+  NO2.detrend <- NO2.detrend.pred + errors
+  constant <- coef(mod4)[1]
+  linearTrend <- coef(mod4)[2]*hours
+  rm(NO2.detrend.pred)
+  })
+
+ref_data4.detrend <- within(ref_data4, {
+  signal <- NO2.detrend
+  linearTrend <- NA
+  NO2 <- "detrended"
+  rm(NO2.detrend)
+})
+ref_data4 <- within(ref_data4,{
+  signal <- NO2
+  NO2 <- "original"
+  rm(NO2.detrend)
+})
+df <- rbind(ref_data4, ref_data4.detrend)
+df$NO2 <- factor(df$NO2, levels = c("original", "detrended"), 
+  labels = c("original", "detrended"))
+
+ref4_df <- melt(df,
+  measure.vars = c("signal", "ref", "constant", "linearTrend", "errors"))
+
+ref4_df <- within(ref4_df, 
+  variable <- factor(variable, 
+    levels = c("signal", "ref", "constant", "linearTrend", "errors"),
+    labels = c("signal", "ref_NL10236", "constant", "linear trend", "error")
+))
+
+ggplot(ref4_df, aes(x = dateTime, y = value, colour = NO2)) +
+  geom_line(show.legend = FALSE) +
+  facet_grid(NO2~variable, switch = "y") +
+  scale_y_continuous(sec.axis = sec_axis(~., name = "")) +
+  scale_x_datetime(date_breaks = "3 months", date_labels = "%b") +
+  labs(y = expression(NO[2]), x = "2016",
+    title = bquote(paste("Decomposition of AiREAS NO"[2], " signal in reference signal + constant + linear trend + error")),
+    subtitle = "Detrended signal is linear trend removed from original signal") +
+  theme(title = element_text(size = 9))
+```
+
+Now we visualize the detrended signals together with the original signals. For clearer distinction, plots are overlaid by smoothed versions of the monthly averages of the signals. 
+
+```{r detrended_signal_plots, results = 'hide', fig.keep = 'all', out.width = "\\textwidth"}
+# create monthly averages of the signals, for all stations
+avg.signal.per.mnth <- aggregate(cbind(NO2, NO2.detrend)~month+stn_ID, data = ref_data, FUN = mean)
+# create dateTime variable for plotting
+avg.signal.per.mnth <- within(avg.signal.per.mnth, {
+  dateTime <- as.POSIXct(
+    paste0("2016-", formatC(month, width = 2, flag = "0"), "-15 00:00:00"),
+    format = "%Y-%m-%d %H:%M:%S", tz="UTC")
+})
+# extract colors from RColorBrewer package
+cols <- RColorBrewer::brewer.pal(9, "Paired")[c(5, 6, 1, 2)]
+# define a function that adds "AiREAS" to use in the labeller argument of facet_wrap
+presetter <- function(string, prefix = "AiREAS ") paste0(prefix, string)
+
+detrend_plot <- ggplot(
+  data = subset(ref_data, !grepl(pattern = "NL", x = stn_ID)), 
+  mapping = aes(x = dateTime, y = NO2)) + 
+  geom_line(mapping = aes(colour = "col1", alpha = "original")) +
+  geom_line(mapping = aes(y = NO2.detrend, colour = "col3", alpha = "original")) +
+  geom_smooth(data = subset(avg.signal.per.mnth, !grepl(pattern = "NL", x = stn_ID)), 
+    mapping = aes(colour = "col2", alpha = "smoothed"), se = FALSE)  +
+  geom_smooth(data = subset(avg.signal.per.mnth, !grepl(pattern = "NL", x = stn_ID)),
+    aes(y = NO2.detrend, colour = "col4", alpha = "smoothed"), se = FALSE)  +
+  coord_cartesian(ylim = c(0, 100)) +
+  facet_wrap(~stn_ID, nrow = 3, labeller = as_labeller(presetter)) +
+  scale_x_datetime(date_breaks = "3 months", date_labels = "%b") +
+  scale_colour_manual(name = "NO2 signal", values = cols[c(2, 2, 4, 4)], 
+    labels = c("original", "original smoothed", "detrended","detrended smoothed")) +
+  scale_alpha_discrete(name = "", range = c("original" = .2, "detrended" = 1)) +
+  guides(alpha = "none") +
+  guides(colour = guide_legend(override.aes = list(colour = cols))) +
+  labs(x = "2016", 
+    title = "Original signal and (linear) detrended signal per AiREAS station") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.3))
+print(detrend_plot)
+
+# and save plot to disc as jpeg
+jpeg(filename = "../figures/detrended signals.jpeg", height = 7, width = sqrt(2)*7, units = "in",
+  res = 300)
+print(detrend_plot)
+dev.off()
+```
+
+## Saving detrended signals
+The detrended signals are added to the lastest version of the original data. Subsequently the extended data frame is saved to disc as R binary and csv.
+```{r adding_detrended_signal}
+# extract relevant variables
+df.to.merge <- subset(ref_data, select = c(dateTime, stn_ID, NO2.detrend))
+# rename corrected signal
+names(df.to.merge)[3] <- "NO2_corrected"
+
+# load latest version of data (stored in object df)
+load("../data/dataframe3_15u00.RData")
+
+# merge detrended signal with df
+df.corrected <- merge(df, df.to.merge, all.x = TRUE)
+
+# store merged data on disc as R binary
+save(df.corrected, file = "../data/dataframe19-12-2017_11u25.RData")
+# store merged data on disc as .csv
+write.csv(df.corrected, file = "../data/dataframe19-12-2017_11u25.csv")
+```
+
+
