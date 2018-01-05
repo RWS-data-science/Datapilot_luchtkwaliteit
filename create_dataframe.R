@@ -1,5 +1,6 @@
 #Load the Aerias data provided by Bas
 library(data.table)
+library(dplyr)
 
 NO2 <- read.csv("data/data_knmi_bas_final/aireas/aireas_lml_2016.no2.csv",header = T)
 
@@ -72,20 +73,21 @@ cbs200$stationID[(nrow(cbs200)-2):nrow(cbs200)]<- paste0("NL",cbs50$stationID[(n
 colnames(cbs200)<- paste0("cbs200_",colnames(cbs200))
 df<- merge(df, cbs200, by.x="stn_ID",by.y= "cbs200_stationID",all.x = T)
 
-##exploration
-library(ggplot2)
-#hoe zijn de metingen verdeeld per station?
-ggplot(df,aes(x=stn_ID,y=NO2))+geom_boxplot()
-ggplot(df,aes(x=stn_ID,y=PM10))+geom_boxplot()+ylim(0,150)
-#zijn er dagelijkse patronen zichtbaar?
-ggplot(df,aes(x=factor(HH),y=NO2))+geom_boxplot()+facet_wrap(~stn_ID)+ylim(0,100)
-ggplot(df,aes(x=factor(HH),y=PM10))+geom_boxplot()+facet_wrap(~stn_ID)+ylim(0,70)
-#df vs PM10
-ggplot(df,aes(x=PM10,y=NO2))+geom_point(alpha=0.1)+facet_wrap(~stn_ID)+xlim(0,150)+ylim(0,100)
+# ##exploration
+# library(ggplot2)
+# #hoe zijn de metingen verdeeld per station?
+# ggplot(df,aes(x=stn_ID,y=NO2))+geom_boxplot()
+# ggplot(df,aes(x=stn_ID,y=PM10))+geom_boxplot()+ylim(0,150)
+# #zijn er dagelijkse patronen zichtbaar?
+# ggplot(df,aes(x=factor(HH),y=NO2))+geom_boxplot()+facet_wrap(~stn_ID)+ylim(0,100)
+# ggplot(df,aes(x=factor(HH),y=PM10))+geom_boxplot()+facet_wrap(~stn_ID)+ylim(0,70)
+# #df vs PM10
+# ggplot(df,aes(x=PM10,y=NO2))+geom_point(alpha=0.1)+facet_wrap(~stn_ID)+xlim(0,150)+ylim(0,100)
 
 
 ##aantal wegen
 library(rgdal)
+library(rgeos)
 
 nwb<- readOGR("data/Verkeer/Shapes/NWB/NWB_Eindhoven_WGS84.shp")
 nwb$Lengte_m <- as.numeric(as.character(nwb$Lengte_m))
@@ -192,29 +194,86 @@ df<- merge(df, NSL, by.x=c("stn_ID","dateTime"),by.y = c("NSL_id_Aireas","NSL_ti
 
 
 #####Add speed data (Marlous)
-speed<- lapply(list.files("data/Speed/"),function(x){fread(paste0("data/speed/",x),stringsAsFactors = TRUE)}) 
-speed<- rbindlist(speed)
-ref<- list()
-# ref_files<- c("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv","data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv",
-#               "data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
-#ref<- rbindlist(lapply(ref_files,function(x){cbind(x,read.csv(x))} ),fill = T)
-ref[[1]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv")
-ref[[1]]$basemap <- 1602
-ref[[2]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv")
-ref[[2]]$basemap <- 1502
-ref[[3]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
-ref[[3]]$basemap <- 1601
+#speed<- lapply(list.files("data/Speed/"),function(x){fread(paste0("data/Speed/",x),stringsAsFactors = TRUE)}) 
+#speed<- rbindlist(speed)
+speed<- fread("data/20171208 Speed Inrix.csv")
 
-ref<- rbindlist(ref,fill=T)
+# ref<- list()
+# # ref_files<- c("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv","data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv",
+# #               "data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
+# #ref<- rbindlist(lapply(ref_files,function(x){cbind(x,read.csv(x))} ),fill = T)
+# ref[[1]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1602_StationsOnlyShortest.csv")
+# ref[[1]]$basemap <- 1602
+# ref[[2]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1502_StationsOnlyShortest.csv")
+# ref[[2]]$basemap <- 1502
+# ref[[3]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1601_StationsOnlyShortest.csv")
+# ref[[3]]$basemap <- 1601
+# 
+# ref<- rbindlist(ref,fill=T)
+# 
+# 
+# ref<- merge(ref[,c("id_Aireas","XDSegID","basemap")],speed, by.x=c("XDSegID","basemap"),by.y=c("segmentid","basemapid"),all.x=TRUE)
+# ref$`datetime (UTC)`<- as.POSIXct(strptime(ref$`datetime (UTC)`,"%Y-%m-%d %H:%M:%S"))
+# 
+# df<- merge(df,ref,by.x=c("stn_ID","dateTime"),by.y=c("id_Aireas","datetime (UTC)"),all.x=TRUE)
 
 
-ref<- merge(ref[,c("id_Aireas","XDSegID","basemap")],speed, by.x=c("XDSegID","basemap"),by.y=c("segmentid","basemapid"),all.x=TRUE)
-ref$`datetime (UTC)`<- as.POSIXct(strptime(ref$`datetime (UTC)`,"%Y-%m-%d %H:%M:%S"))
+#reftabel FCD to aireas for all ids
+ref_250<- list()
 
-df<- merge(df,ref,by.x=c("stn_ID","dateTime"),by.y=c("id_Aireas","datetime (UTC)"),all.x=TRUE)
+ref_250[[1]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1502_StationsWithin250Radius.csv")
+ref_250[[1]]$basemap <- 1502
+ref_250[[2]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1602_StationsWithin250Radius.csv")
+ref_250[[2]]$basemap <- 1602
+ref_250[[3]]<- read.csv("data/LinkFCDtoAireasLML/koppel_1601_StationsWithin250Radius.csv")
+ref_250[[3]]$basemap <- 1601
 
+ref_250<- as.data.frame(rbindlist(ref_250,fill=T))
+
+ref_250$code<- paste(ref_250$basemap,ref_250$XDSegID,sep="_")
+#ref_250$timestamp<- as.POSIXct(strptime(ref_250$timestamp,"%d-%m-%Y %H:%M"))
+
+speed<- as.data.frame(speed)
+speed<- speed[which(speed$code %in% ref_250$code),]
+
+speed_merged<- merge(ref_250[,c("id_Aireas","code","dist")],speed,by="code",all=T)
+
+calc <- function(sp,d){
+  sum(sp/d)/sum(1/d) }
+calc2<- function(sp,d){
+  sum(sp/d)/length(d)
+}
+speed_agg<- speed_merged %>%
+  group_by(id_Aireas,datetime) %>% 
+  summarise(FCD_weighted_speedfactor=calc(speedfactor,dist),FCD_weighted_speed=calc(speed,dist),FCD_weighted_max_speed= calc(max_speed,dist),
+            FCD_speedfactor_by_dist = calc2(speedfactor,dist))
+
+speed_agg$datetime<- as.POSIXct(strptime(speed_agg$datetime,"%Y-%m-%d %H:%M:%S"))
+
+#merge
+df<- merge(df,speed_agg,by.x=c("stn_ID","dateTime"),by.y=c("id_Aireas","datetime"),all.x=TRUE)
+
+
+###2017-12-08 Nieuwe verkeersdata Marlous
+
+fcd_flow<- fread("data/20171207 Koppeling INRIX FCD-flow NDW Eindhoven.csv")
+
+fcd_flow$datetime <- as.POSIXct(strptime(fcd_flow$datetime,"%Y-%m-%d %H:%M:%S"))
+
+fcd_flow<- fcd_flow[which(fcd_flow$code %in% ref_250$code),]
+
+int_merged<- merge(ref_250[,c("id_Aireas","code","dist")],fcd_flow[,c("code","datetime","cat_all","cat_1_3","cat_2_3","cat_3_3","cat_1_5","cat_2_5","cat_3_5","cat_4_5","cat_5_5","categorie" )],by="code",all=T)
+
+int_agg<- int_merged %>%
+  group_by(id_Aireas,datetime) %>%
+  summarise(weighted_int_all = calc(cat_all, dist),weighted_int_cat_1_3 = calc(cat_1_3, dist),weighted_int_cat_2_3 = calc(cat_2_3, dist),weighted_int_cat_3_3 = calc(cat_3_3, dist),
+            weighted_int_cat_1_5 = calc(cat_1_5, dist),weighted_int_cat_2_5 = calc(cat_2_5, dist),weighted_int_cat_3_5 = calc(cat_3_5, dist),weighted_int_cat_4_5 = calc(cat_4_5, dist),
+            weighted_int_cat_5_5 = calc(cat_5_5, dist))
+
+
+df<- merge(df,int_agg,by.x=c("stn_ID","dateTime"),by.y=c("id_Aireas","datetime"),all.x=TRUE)
 
 ###save
-save(df,file="data/dataframe2_14u12.RData")
-write.csv(df,file="data/dataframe2_14u12.csv")
+save(df,file="data/dataframe3_15u00.RData")
+write.csv(df,file="data/dataframe3_15u00.csv")
 

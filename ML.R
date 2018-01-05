@@ -5,17 +5,22 @@ library(ggplot2)
 
 
 
-load("data/dataframe2_14u12.RData")
+#load("data/dataframe2_14u12.RData")
+load("data/dataframe19-12-2017_11u25.RData") #update van Maarten met correctie voor drifts
+df<- df.corrected
 
 df_prep<- df
 
 #remove variables with no value
 df_prep$X<- NULL
+df_prep$Street<- NULL
 df_prep$City<- NULL
 df_prep$Species<- NULL
 df_prep$STN<- NULL
 df_prep$YYYYMMDD<- NULL
 df_prep$basemap <- NULL
+
+df_prep$HH<- as.factor(df_prep$HH)
 
 
 stns<- sample(unique(df_prep$stn_ID),15) ## 15 station voor training, 7 voor testen (random geselecteerd)
@@ -27,8 +32,8 @@ n<-as.numeric(which(colnames(train)=="NO2"))
 
 
 ##ML met H2o
-localH2O = h2o.init(max_mem_size = '12g', 
-                    nthreads = -1) 
+localH2O = h2o.init(max_mem_size = '24g', 
+                    nthreads = 60) 
 
 
 train_h2o = as.h2o(train[,3:ncol(test)])
@@ -60,12 +65,12 @@ hyper_params = list( ntrees = ntrees_opts,
 
 
 ## Search a random subset of these hyper-parmameters (max runtime and max models are enforced, and the search will stop after we don't improve much over the best 5 random models)
-search_criteria = list(strategy = "RandomDiscrete", max_runtime_secs = 600, max_models = 100, stopping_metric = "AUTO", stopping_tolerance = 0.00001, stopping_rounds = 5, seed = 123456)
+search_criteria = list(strategy = "RandomDiscrete", max_runtime_secs = 600, max_models = 100, stopping_metric = "RMSE", stopping_tolerance = 0.00001, stopping_rounds = 5)
 
 gbm.grid <- h2o.grid("gbm",
                      
-                     x=c(2:ncol(train)), y = 1,
-                     
+#                     x=c(2:ncol(train)), y = 1,            #without corrected NO2
+                     x=c(2:(h2o.ncol(train_h2o)-1)),y=h2o.ncol(train_h2o), #corrected NO2 is the final column of the df
                      # faster to use a 80/20 split
                      training_frame = train_h2o,
                      validation_frame = test_h2o,
@@ -81,12 +86,13 @@ gbm.grid <- h2o.grid("gbm",
                      ## for 2 consecutive scoring events
                      stopping_rounds = 2,
                      stopping_tolerance = 1e-3,
-                     stopping_metric = "MSE",
+                     stopping_metric = "RMSE",
                      
                      score_tree_interval = 100, ## how often to score (affects early stopping)
-                     seed = 123456, ## seed to control the sampling of the Cartesian hyper-parameter space
-                     hyper_params = hyper_params,
-                     search_criteria = search_criteria)
+                     #seed = 123456, ## seed to control the sampling of the Cartesian hyper-parameter space
+                    hyper_params = hyper_params,
+                     search_criteria = search_criteria
+)
 
 gbm.sorted.grid <- h2o.getGrid(grid_id = gbm.grid@grid_id, sort_by = "mse")
 print(gbm.sorted.grid)
@@ -102,14 +108,21 @@ h2o_y_test_grid<- h2o.predict(best_model, test_h2o)
 test$pred_grid<-  as.data.frame(h2o_y_test_grid)
 
 #calculate rmse per station
-sqrt(mean((test$NO2-test$pred_grid)^2,na.rm = TRUE))
+sqrt(mean((test$NO2_corrected-test$pred_grid)^2,na.rm = TRUE))
 
 rmse_grid <- test %>% group_by(stn_ID) %>%
-  summarize(rmse=sqrt(mean((NO2-pred_grid)^2,na.rm = TRUE)))
+  summarize(rmse=sqrt(mean((NO2_corrected-pred_grid)^2,na.rm = TRUE)))
 
-rmse_grid
+rmse_grid<- as.data.frame(rmse_grid)
 
-ggplot(test,aes(x=dateTime))+geom_line(aes(y=NO2),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID)+ ylim(0,100) +
-  geom_smooth(aes(y=NO2),col="black") + geom_smooth(aes(y=pred_grid),col="red")
+ggplot(test,aes(x=dateTime))+geom_line(aes(y=NO2_corrected),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID)+ ylim(0,100) 
+              
 
-ggplot(test[which(test$dateTime<"2016-02-01 00:00:00"& test$stn_ID!=3),],aes(x=dateTime))+geom_line(aes(y=NO2),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+facet_wrap(~stn_ID)+ ylim(0,100)
+  #geom_smooth(aes(y=NO2_corrected),col="black") + geom_smooth(aes(y=pred_grid),col="red")
+
+ggplot(test[which(test$dateTime<"2016-03-01 00:00:00"& test$stn_ID!=3),],aes(x=dateTime))+geom_line(aes(y=NO2_corrected),alpha=0.7)+geom_line(aes(y=pred_grid),col="red",alpha=0.7)+
+  facet_wrap(~stn_ID)+ ylim(0,100)+
+  geom_text(data=data.frame(x=as.POSIXct("2016-01-01 00:00:00"), y=100, label=paste("RMSE=",round(rmse_grid$rmse,2)), stn_ID=rmse_grid$stn_ID), 
+            aes(x,y,label=label), inherit.aes=FALSE,size=3,hjust=0)
+
+
